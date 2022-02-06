@@ -14,5 +14,5 @@ export const handler = async () => {
     TableName: tableName,
   });
   const result = await docClient.send(command);
-  return { Body: result.Items, StatusCode: 200 };
+  return { Body: result.Items };
 };
