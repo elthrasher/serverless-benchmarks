@@ -11,8 +11,10 @@ export const handler = async () => {
   const command = new QueryCommand({
     ExpressionAttributeValues: { ':pk': 'nodejs14.x' },
     KeyConditionExpression: 'pk = :pk',
+    Limit: 25,
+    ScanIndexForward: false,
     TableName: tableName,
   });
   const result = await docClient.send(command);
-  return { Body: result.Items };
+  return result.Items;
 };
