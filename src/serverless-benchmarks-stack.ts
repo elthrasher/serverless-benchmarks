@@ -99,11 +99,11 @@ export class ServerlessBenchmarksStack extends Stack {
       path: '/benchmarks',
     });
 
-    const benchmarkTarget = new LambdaFunction(getBenchmarksFn);
+    const benchmarkTarget = new LambdaFunction(benchmarkFn);
 
     new Rule(this, 'BenchmarkRule', {
       ruleName: 'LambdaBenchmarkRule',
-      schedule: Schedule.cron({ hour: '4', minute: '0' }),
+      schedule: Schedule.cron({ hour: '7', minute: '0' }),
       targets: [benchmarkTarget],
     });
   }
