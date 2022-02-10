@@ -48,6 +48,7 @@ export const handler = async () => {
     const command = new PutCommand({
       Item: {
         ...stats,
+        date,
         pk: stats.Runtime,
         sk: `${date}#${stats.FunctionName}`,
       },
