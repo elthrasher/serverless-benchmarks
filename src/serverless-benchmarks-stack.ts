@@ -69,14 +69,6 @@ export class ServerlessBenchmarksStack extends Stack {
       fn.grantInvoke(benchmarkFn);
     }
 
-    const getBenchmarksFn = new NodejsFunction(this, 'get-benchmarks-fn', {
-      ...lambdaProps,
-      entry: `${__dirname}/../fns/get-benchmarks.ts`,
-      functionName: 'getBenchmarks',
-    });
-
-    table.grantReadData(getBenchmarksFn);
-
     const benchmarkTarget = new LambdaFunction(benchmarkFn);
 
     new Rule(this, 'BenchmarkRule', {
