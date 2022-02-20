@@ -1,5 +1,12 @@
-import { aws_apigateway as apigateway, aws_iam as iam, Duration, RemovalPolicy, Stack, StackProps, Aws } from 'aws-cdk-lib';
-import { CfnStage } from 'aws-cdk-lib/aws-apigatewayv2';
+import {
+  Aws,
+  aws_apigateway as apigateway,
+  aws_iam as iam,
+  Duration,
+  RemovalPolicy,
+  Stack,
+  StackProps,
+} from 'aws-cdk-lib';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
@@ -83,11 +90,15 @@ export class ServerlessBenchmarksStack extends Stack {
       assumedBy: new iam.ServicePrincipal('apigateway.amazonaws.com'),
     });
 
-    restApiRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      resources: [`arn:aws:dynamodb:${Aws.REGION}:${Aws.ACCOUNT_ID}:table/${table.tableName}`],
-      actions: ["dynamodb:Query"]
-    }))
+    restApiRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        resources: [
+          `arn:aws:dynamodb:${Aws.REGION}:${Aws.ACCOUNT_ID}:table/${table.tableName}`,
+        ],
+        actions: ['dynamodb:Query'],
+      })
+    );
 
     const rootIntegration = new apigateway.MockIntegration({
       passthroughBehavior: apigateway.PassthroughBehavior.NEVER,
@@ -98,8 +109,7 @@ export class ServerlessBenchmarksStack extends Stack {
         {
           statusCode: '200',
           responseTemplates: {
-            'text/html':
-              `<!DOCTYPE html>
+            'text/html': `<!DOCTYPE html>
                <html lang="en">
                <head>
                <title>Benchmarks</title>
@@ -111,8 +121,10 @@ export class ServerlessBenchmarksStack extends Stack {
                </br>
                <a href="api/">API</a>
                </body>
-               </html>`},
-        }]
+               </html>`,
+          },
+        },
+      ],
     });
 
     const dynamoDbQuery = `{"TableName": "${table.tableName}",
@@ -128,7 +140,7 @@ export class ServerlessBenchmarksStack extends Stack {
       options: {
         credentialsRole: restApiRole,
         requestTemplates: {
-          'application/json': dynamoDbQuery
+          'application/json': dynamoDbQuery,
         },
         integrationResponses: [
           {
@@ -211,7 +223,7 @@ export class ServerlessBenchmarksStack extends Stack {
       options: {
         credentialsRole: restApiRole,
         requestTemplates: {
-          'application/json': dynamoDbQuery
+          'application/json': dynamoDbQuery,
         },
         integrationResponses: [
           {
@@ -223,23 +235,31 @@ export class ServerlessBenchmarksStack extends Stack {
     });
 
     restApi.root.addMethod('GET', rootIntegration, {
-      methodResponses: [{
-        statusCode: '200', responseModels: {
-          'text/html': apigateway.Model.EMPTY_MODEL
-        }
-      }]
+      methodResponses: [
+        {
+          statusCode: '200',
+          responseModels: {
+            'text/html': apigateway.Model.EMPTY_MODEL,
+          },
+        },
+      ],
     });
 
     const api = restApi.root.addResource('api');
-    api.addMethod('GET', apiIntegration, { methodResponses: [{ statusCode: '200' }] });
+    api.addMethod('GET', apiIntegration, {
+      methodResponses: [{ statusCode: '200' }],
+    });
 
     const ui = restApi.root.addResource('ui');
     ui.addMethod('GET', uiIntegration, {
-      methodResponses: [{
-        statusCode: '200', responseModels: {
-          'text/html': apigateway.Model.EMPTY_MODEL
-        }
-      }]
+      methodResponses: [
+        {
+          statusCode: '200',
+          responseModels: {
+            'text/html': apigateway.Model.EMPTY_MODEL,
+          },
+        },
+      ],
     });
   }
 }
