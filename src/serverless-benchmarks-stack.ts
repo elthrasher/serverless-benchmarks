@@ -76,7 +76,37 @@ export class ServerlessBenchmarksStack extends Stack {
       fn.grantInvoke(benchmarkFn);
     }
 
-    const benchmarkTarget = new LambdaFunction(benchmarkFn);
+    const benchmarkViaHttpFn = new NodejsFunction(this, 'benchmark-via-http-fn', {
+      ...lambdaProps,
+      timeout: Duration.minutes(15),
+      entry: `${__dirname}/../fns/benchmarkViaHttp.ts`,
+      functionName: 'benchmarkViaHttp',
+    });
+
+    benchmarkViaHttpFn.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      resources: ['*'],
+      actions: ['logs:GetLogEvents'],
+    }
+    )
+    );
+
+    table.grantWriteData(benchmarkViaHttpFn);
+
+    for (const fn of props.functions) {
+      benchmarkViaHttpFn.role?.attachInlinePolicy(
+        new Policy(this, `get-${fn.node.id}-viaHttp-policy`, {
+          statements: [
+            new PolicyStatement({
+              actions: ['lambda:GetFunction'],
+              resources: [fn.functionArn],
+            }),
+          ],
+        })
+      );
+    }
+
+    const benchmarkTarget = new LambdaFunction(benchmarkFn, benchmarkViaHttpFn);
 
     new Rule(this, 'BenchmarkRule', {
       ruleName: 'LambdaBenchmarkRule',

@@ -12,4 +12,5 @@ const csvDdbStack = new Csv2DDBStack(app, 'Csv2DDBStack');
 
 new ServerlessBenchmarksStack(app, 'ServerlessBenchmarksStack', {
   functions: csvDdbStack.functions,
+  httpApis: csvDdbStack.httpApis,
 });
