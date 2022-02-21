@@ -9,7 +9,7 @@ const tableName = process.env.TABLE_NAME;
 const docClient = new DynamoDB.DocumentClient();
 const s3 = new S3();
 
-export const handler = () => {
+export const handler = async (event: Object, context: Object) => {
   if (!bucketName || !bucketKey || !tableName) {
     throw new Error('Missing required env var!');
   }
@@ -17,7 +17,7 @@ export const handler = () => {
     .getObject({ Bucket: bucketName, Key: bucketKey })
     .createReadStream();
 
-  csv()
+  await csv()
     .fromStream(s3Stream)
     .subscribe(async (item) => {
       await docClient
@@ -27,4 +27,9 @@ export const handler = () => {
         })
         .promise();
     });
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ event: event, context: context }),
+  }
 };
