@@ -22,6 +22,7 @@ import { Construct } from 'constructs';
 
 interface ServerlessBenchmarksStackProps extends StackProps {
   functions: LambdaFn[];
+  httpApis: object[];
 }
 
 export class ServerlessBenchmarksStack extends Stack {
@@ -45,6 +46,7 @@ export class ServerlessBenchmarksStack extends Stack {
       bundling: { minify: true, sourceMap: true },
       environment: {
         COMMA_SEP_ARNS: props.functions.map((fn) => fn.functionArn).join(','),
+        JSON_STRINGIFIED_TARGETS: JSON.stringify(props.httpApis),
         NODE_OPTIONS: '--enable-source-maps',
         TABLE_NAME: table.tableName,
       },
