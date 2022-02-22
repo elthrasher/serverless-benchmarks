@@ -13,7 +13,6 @@ const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 });
 const lambdaClient = new LambdaClient({});
 
-const fns = JSON.parse(process.env.JSON_STRINGIFIED_TARGETS);
 const tableName = process.env.TABLE_NAME;
 const iterations = 100;
 
@@ -47,6 +46,22 @@ function getRequest(url: string) {
 }
 
 export const handler = async (event: Object, context: Object) => {
+  // Determine the set of APIs to test based on the rule that triggered this invocation
+  const target = event.resources[0].split('/').pop();
+  let fns: string = '';
+  switch (target) {
+    case 'LambdaBenchmarkRuleA':
+      fns = JSON.parse(process.env.JSON_STRINGIFIED_TARGETS_A || '');
+      break;
+    case 'LambdaBenchmarkRuleB':
+      fns = JSON.parse(process.env.JSON_STRINGIFIED_TARGETS_B || '');
+      break;
+    case 'LambdaBenchmarkRuleC':
+      fns = JSON.parse(process.env.JSON_STRINGIFIED_TARGETS_C || '');
+      break;
+    default:
+      console.log('do not know what to do with:', target);
+  }
   if (!fns) {
     throw new Error('Missing or incorrect env var!');
   }

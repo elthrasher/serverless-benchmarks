@@ -22,7 +22,9 @@ import { Construct } from 'constructs';
 
 interface ServerlessBenchmarksStackProps extends StackProps {
   functions: LambdaFn[];
-  httpApis: object[];
+  httpApisA: object[];
+  httpApisB: object[];
+  httpApisC: object[];
 }
 
 export class ServerlessBenchmarksStack extends Stack {
@@ -58,7 +60,9 @@ export class ServerlessBenchmarksStack extends Stack {
       bundling: { minify: true, sourceMap: true },
       environment: {
         COMMA_SEP_ARNS: props.functions.map((fn) => fn.functionArn).join(','),
-        JSON_STRINGIFIED_TARGETS: JSON.stringify(props.httpApis),
+        JSON_STRINGIFIED_TARGETS_A: JSON.stringify(props.httpApisA),
+        JSON_STRINGIFIED_TARGETS_B: JSON.stringify(props.httpApisB),
+        JSON_STRINGIFIED_TARGETS_C: JSON.stringify(props.httpApisC),
         NODE_OPTIONS: '--enable-source-maps',
         TABLE_NAME: table.tableName,
       },
@@ -127,12 +131,33 @@ export class ServerlessBenchmarksStack extends Stack {
       );
     }
 
-    const benchmarkTarget = new LambdaFunction(benchmarkFn, benchmarkViaHttpFn);
+    const benchmarkTarget = new LambdaFunction(benchmarkFn);
+    const benchmarkViaHttpTargetA = new LambdaFunction(benchmarkViaHttpFn);
+    const benchmarkViaHttpTargetB = new LambdaFunction(benchmarkViaHttpFn);
+    const benchmarkViaHttpTargetC = new LambdaFunction(benchmarkViaHttpFn);
 
     new Rule(this, 'BenchmarkRule', {
       ruleName: 'LambdaBenchmarkRule',
-      schedule: Schedule.cron({ hour: '7', minute: '0' }),
+      schedule: Schedule.cron({ hour: '1', minute: '0' }),
       targets: [benchmarkTarget],
+    });
+
+    new Rule(this, 'BenchmarkRuleA', {
+      ruleName: 'LambdaBenchmarkRuleA',
+      schedule: Schedule.cron({ hour: '2', minute: '0' }),
+      targets: [benchmarkViaHttpTargetA],
+    });
+
+    new Rule(this, 'BenchmarkRuleB', {
+      ruleName: 'LambdaBenchmarkRuleB',
+      schedule: Schedule.cron({ hour: '3', minute: '0' }),
+      targets: [benchmarkViaHttpTargetB],
+    });
+
+    new Rule(this, 'BenchmarkRuleC', {
+      ruleName: 'LambdaBenchmarkRuleC',
+      schedule: Schedule.cron({ hour: '4', minute: '0' }),
+      targets: [benchmarkViaHttpTargetC],
     });
 
     const restApi = new apigateway.RestApi(this, 'Benchmarks');

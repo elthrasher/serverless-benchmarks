@@ -18,7 +18,9 @@ import { LambdaIntegration, RestApi, EndpointType } from "aws-cdk-lib/aws-apigat
 
 export class Csv2DDBStack extends Stack {
   public functions: LambdaFunction[];
-  public httpApis: object[] = [];
+  public httpApisA: object[] = [];
+  public httpApisB: object[] = [];
+  public httpApisC: object[] = [];
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -142,17 +144,17 @@ export class Csv2DDBStack extends Stack {
       restEdgeResource.addMethod('GET', restIntegration);
       restRegionalResource.addMethod('GET', restIntegration);
 
-      this.httpApis.push({
+      this.httpApisA.push({
         url: `${httpApi.url}http/${fn.node.id}`,
         arn: fn.functionArn,
         apiG: 'HttpApi',
       });
-      this.httpApis.push({
+      this.httpApisB.push({
         url: `${restEdgeApi.url}rest/${fn.node.id}`,
         arn: fn.functionArn,
         apiG: 'RestEdgeApi',
       });
-      this.httpApis.push({
+      this.httpApisC.push({
         url: `${restRegionalApi.url}rest/${fn.node.id}`,
         arn: fn.functionArn,
         apiG: 'RestRegionalApi',
