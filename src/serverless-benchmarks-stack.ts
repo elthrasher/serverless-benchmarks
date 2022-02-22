@@ -41,6 +41,18 @@ export class ServerlessBenchmarksStack extends Stack {
       tableName: 'Benchmarks',
     });
 
+    table.addGlobalSecondaryIndex({
+      indexName: 'itemsThatNeedCwData',
+      partitionKey: {
+        name: 'pk',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'LastCall',
+        type: AttributeType.NUMBER,
+      },
+    });
+
     const lambdaProps = {
       architecture: Architecture.ARM_64,
       bundling: { minify: true, sourceMap: true },
@@ -84,16 +96,23 @@ export class ServerlessBenchmarksStack extends Stack {
       entry: `${__dirname}/../fns/benchmarkViaHttp.ts`,
       functionName: 'benchmarkViaHttp',
     });
+    table.grantWriteData(benchmarkViaHttpFn);
 
-    benchmarkViaHttpFn.addToRolePolicy(new iam.PolicyStatement({
+    const updateDdbLaterFn = new NodejsFunction(this, 'update-ddb-later-fn', {
+      ...lambdaProps,
+      timeout: Duration.minutes(15),
+      entry: `${__dirname}/../fns/update-ddb-later.ts`,
+      functionName: 'updateDdbLater',
+    });
+    table.grantReadData(updateDdbLaterFn);
+
+    updateDdbLaterFn.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       resources: ['*'],
       actions: ['logs:GetLogEvents'],
     }
     )
     );
-
-    table.grantWriteData(benchmarkViaHttpFn);
 
     for (const fn of props.functions) {
       benchmarkViaHttpFn.role?.attachInlinePolicy(
