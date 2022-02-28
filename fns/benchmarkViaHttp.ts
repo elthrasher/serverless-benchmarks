@@ -1,10 +1,9 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import {
-  GetFunctionCommand,
-  LambdaClient,
-} from '@aws-sdk/client-lambda';
+import { GetFunctionCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { EventBridgeEvent, EventBridgeHandler } from 'aws-lambda';
 import { get } from 'https';
+import { HttpApis } from '../src/csv2ddb-stack';
 
 import { getStats } from './util';
 
@@ -16,14 +15,23 @@ const lambdaClient = new LambdaClient({});
 const tableName = process.env.TABLE_NAME;
 const iterations = 100;
 
+export interface CloudWatchStats {
+  duration: number;
+  logGroupName: string;
+  logStreamName: string;
+  requestId: string;
+  startTime: number;
+  endTime: number;
+}
+
 // original from https://bobbyhadz.com/blog/aws-lambda-http-request-nodejs
-function getRequest(url: string) {
+const getRequest = (url: string): Promise<CloudWatchStats> => {
   const startTime = new Date().getTime();
 
   return new Promise((resolve, reject) => {
-    const req = get(url, res => {
+    const req = get(url, (res) => {
       let rawData = '';
-      res.on('data', chunk => {
+      res.on('data', (chunk) => {
         rawData += chunk;
       });
       res.on('end', () => {
@@ -43,12 +51,12 @@ function getRequest(url: string) {
       reject(new Error(err));
     });
   });
-}
+};
 
-export const handler = async (event: Object, context: Object) => {
+export const handler = async (event: EventBridgeEvent<string, string>) => {
   // Determine the set of APIs to test based on the rule that triggered this invocation
   const target = event.resources[0].split('/').pop();
-  let fns: string = '';
+  let fns: HttpApis[] | undefined = undefined;
   switch (target) {
     case 'LambdaBenchmarkRuleA':
       fns = JSON.parse(process.env.JSON_STRINGIFIED_TARGETS_A || '');
@@ -72,7 +80,7 @@ export const handler = async (event: Object, context: Object) => {
     const getResult = await lambdaClient.send(getCommand);
     const promises = [];
     const cwLookupInfo = [];
-    const durations: Number[] = [];
+    const durations: number[] = [];
     for (let i = 0; i < iterations; i++) {
       promises.push(getRequest(fn.url));
     }
@@ -87,7 +95,7 @@ export const handler = async (event: Object, context: Object) => {
         requestId: invokeResult['requestId'],
         startTime: invokeResult['startTime'],
         endTime: invokeResult['endTime'],
-      })
+      });
     }
     const stats = getStats(durations, [], getResult.Configuration);
 
@@ -96,7 +104,7 @@ export const handler = async (event: Object, context: Object) => {
         ...stats,
         getResultConfiguration: getResult.Configuration,
         CwLookupInfo: cwLookupInfo,
-        LastCall: Math.max(...cwLookupInfo.map(x => x['endTime'])),
+        LastCall: Math.max(...cwLookupInfo.map((x) => x['endTime'])),
         Date: date,
         pk: stats.Runtime,
         sk: `${date}#${fn.apiG}-${stats.FunctionName}`,
@@ -109,5 +117,5 @@ export const handler = async (event: Object, context: Object) => {
   return {
     statusCode: 200,
     body: JSON.stringify({ Status: 'Complete.' }),
-  }
+  };
 };

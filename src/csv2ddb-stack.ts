@@ -14,13 +14,23 @@ import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
 import { HttpApi, HttpMethod } from '@aws-cdk/aws-apigatewayv2-alpha';
 import { HttpLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
-import { LambdaIntegration, RestApi, EndpointType } from "aws-cdk-lib/aws-apigateway"
+import {
+  LambdaIntegration,
+  RestApi,
+  EndpointType,
+} from 'aws-cdk-lib/aws-apigateway';
+
+export interface HttpApis {
+  apiG: string;
+  arn: string;
+  url: string;
+}
 
 export class Csv2DDBStack extends Stack {
   public functions: LambdaFunction[];
-  public httpApisA: object[] = [];
-  public httpApisB: object[] = [];
-  public httpApisC: object[] = [];
+  public httpApisA: HttpApis[] = [];
+  public httpApisB: HttpApis[] = [];
+  public httpApisC: HttpApis[] = [];
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -118,8 +128,12 @@ export class Csv2DDBStack extends Stack {
     ];
 
     const httpApi = new HttpApi(this, 'BenchmarksHttpApi');
-    const restEdgeApi = new RestApi(this, 'BenchmarksRestEdgeApi', { endpointConfiguration: { types: [EndpointType.EDGE] }, });
-    const restRegionalApi = new RestApi(this, 'BenchmarksRestRegionalApi', { endpointConfiguration: { types: [EndpointType.REGIONAL] }, });
+    const restEdgeApi = new RestApi(this, 'BenchmarksRestEdgeApi', {
+      endpointConfiguration: { types: [EndpointType.EDGE] },
+    });
+    const restRegionalApi = new RestApi(this, 'BenchmarksRestRegionalApi', {
+      endpointConfiguration: { types: [EndpointType.REGIONAL] },
+    });
 
     const restEdge = restEdgeApi.root.addResource('rest');
     const restRegional = restRegionalApi.root.addResource('rest');

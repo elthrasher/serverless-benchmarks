@@ -1,8 +1,11 @@
+import {
+  CloudWatchLogsClient,
+  GetLogEventsCommand,
+} from '@aws-sdk/client-cloudwatch-logs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { CloudWatchLogsClient, GetLogEventsCommand } from "@aws-sdk/client-cloudwatch-logs";
+import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
-import { getStats } from './util';
+import { CloudWatchStats } from './benchmarkViaHttp';
 
 const cloudwatchlogsClient = new CloudWatchLogsClient({});
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -11,24 +14,26 @@ const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 
 const tableName = process.env.TABLE_NAME;
 
-
-export const handler = async (event: Object, context: Object) => {
-  const delayBeforeLooking = (10 * 60000); // minutes
+export const handler = async () => {
+  const delayBeforeLooking = 10 * 60000; // minutes
   const currentTime = new Date().getTime();
 
   // query the dynamodb table, to find items that need to be looked up in CloudWatch Logs
   const command = new QueryCommand({
-    "TableName": "Benchmarks", //tableName,
-    "IndexName": "itemsThatNeedCwData",
-    "ExpressionAttributeValues": { ":pk": "nodejs14.x", ":lc": currentTime - delayBeforeLooking },
-    "KeyConditionExpression": "pk = :pk and LastCall < :lc",
+    TableName: 'Benchmarks', //tableName,
+    IndexName: 'itemsThatNeedCwData',
+    ExpressionAttributeValues: {
+      ':pk': 'nodejs14.x',
+      ':lc': currentTime - delayBeforeLooking,
+    },
+    KeyConditionExpression: 'pk = :pk and LastCall < :lc',
   });
   const data = await docClient.send(command);
   // console.log('data:', data);
   // console.log('CwLookupInfo:', [0].CwLookupInfo)
 
-  console.log('data.Items.length:', data.Items.length);
-  data.Items.forEach(item => {
+  console.log('data.Items.length:', data?.Items?.length);
+  data?.Items?.forEach((item) => {
     const durations = [];
     const inits = [];
     const getResultConfiguration = item.getResultConfiguration;
@@ -36,7 +41,7 @@ export const handler = async (event: Object, context: Object) => {
     console.log('item.CwLookupInfo.length:', item.CwLookupInfo.length);
 
     let count = 0;
-    item.CwLookupInfo.forEach(async cwLookupItem => {
+    item.CwLookupInfo.forEach(async (cwLookupItem: CloudWatchStats) => {
       count++;
 
       console.log(count + '. cwLookupItem:', cwLookupItem);
@@ -65,9 +70,7 @@ export const handler = async (event: Object, context: Object) => {
       //   console.log('cwEvents:', cwEvents);
       //   console.log('cwRecordOfInterest:', cwRecordOfInterest);
 
-
       //   const init = parseFloat(cwRecordOfInterest.message.split('Init Duration: ')[1] || '0');
-
 
       //   durations.push(duration);
       //   inits.push(init);
@@ -81,10 +84,7 @@ export const handler = async (event: Object, context: Object) => {
       //     endTime: cwLookupItem['endTime']
       //   });
       // }
-
-
-    })
-
+    });
 
     // const stats = getStats(durations, inits, getResultConfiguration);
 
@@ -98,8 +98,5 @@ export const handler = async (event: Object, context: Object) => {
     //   TableName: tableName,
     // });
     // await docClient.send(command);
-
-
-
   });
 };

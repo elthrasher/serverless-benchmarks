@@ -20,11 +20,13 @@ import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
+import { HttpApis } from './csv2ddb-stack';
+
 interface ServerlessBenchmarksStackProps extends StackProps {
   functions: LambdaFn[];
-  httpApisA: object[];
-  httpApisB: object[];
-  httpApisC: object[];
+  httpApisA: HttpApis[];
+  httpApisB: HttpApis[];
+  httpApisC: HttpApis[];
 }
 
 export class ServerlessBenchmarksStack extends Stack {
@@ -94,12 +96,16 @@ export class ServerlessBenchmarksStack extends Stack {
       fn.grantInvoke(benchmarkFn);
     }
 
-    const benchmarkViaHttpFn = new NodejsFunction(this, 'benchmark-via-http-fn', {
-      ...lambdaProps,
-      timeout: Duration.minutes(15),
-      entry: `${__dirname}/../fns/benchmarkViaHttp.ts`,
-      functionName: 'benchmarkViaHttp',
-    });
+    const benchmarkViaHttpFn = new NodejsFunction(
+      this,
+      'benchmark-via-http-fn',
+      {
+        ...lambdaProps,
+        timeout: Duration.minutes(15),
+        entry: `${__dirname}/../fns/benchmarkViaHttp.ts`,
+        functionName: 'benchmarkViaHttp',
+      }
+    );
     table.grantWriteData(benchmarkViaHttpFn);
 
     const updateDdbLaterFn = new NodejsFunction(this, 'update-ddb-later-fn', {
@@ -110,12 +116,12 @@ export class ServerlessBenchmarksStack extends Stack {
     });
     table.grantReadData(updateDdbLaterFn);
 
-    updateDdbLaterFn.addToRolePolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      resources: ['*'],
-      actions: ['logs:GetLogEvents'],
-    }
-    )
+    updateDdbLaterFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        resources: ['*'],
+        actions: ['logs:GetLogEvents'],
+      })
     );
 
     for (const fn of props.functions) {
