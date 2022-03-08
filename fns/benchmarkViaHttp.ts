@@ -15,6 +15,9 @@ const lambdaClient = new LambdaClient({});
 const tableName = process.env.TABLE_NAME;
 const iterations = 100;
 
+// the first section should be the cold starts
+const iterationSplits = 2;
+
 export interface CloudWatchStats {
   duration: number;
   logGroupName: string;
@@ -75,36 +78,57 @@ export const handler = async (event: EventBridgeEvent<string, string>) => {
   }
   const date = new Date().toISOString().split('T')[0];
 
+  const durations: { [key: string]: number[] } = {};
+  const cwLookupInfo: {
+    [key: string]: {
+      duration: number,
+      logGroupName: string,
+      logStreamName: string,
+      requestId: string,
+      startTime: number,
+      endTime: number,
+    }[]
+  } = {};
+  for (let x = 1; x <= iterationSplits; x++) {
+    for (const fn of fns) {
+      if (!cwLookupInfo[fn.url]) {
+        cwLookupInfo[fn.url] = [];
+      }
+      if (!durations[fn.url]) {
+        durations[fn.url] = [];
+      }
+      const promises = [];
+      for (let i = 0; i < (iterations / iterationSplits); i++) {
+        promises.push(getRequest(fn.url));
+      }
+      const invokeResults = await Promise.all(promises);
+
+      for (const invokeResult of invokeResults) {
+        durations[fn.url].push(invokeResult['duration']);
+        cwLookupInfo[fn.url].push({
+          duration: invokeResult['duration'],
+          logGroupName: invokeResult['logGroupName'],
+          logStreamName: invokeResult['logStreamName'],
+          requestId: invokeResult['requestId'],
+          startTime: invokeResult['startTime'],
+          endTime: invokeResult['endTime'],
+        });
+      }
+    }
+  }
+
+  // now enter the data into the dynamodb table
   for (const fn of fns) {
     const getCommand = new GetFunctionCommand({ FunctionName: fn.arn });
     const getResult = await lambdaClient.send(getCommand);
-    const promises = [];
-    const cwLookupInfo = [];
-    const durations: number[] = [];
-    for (let i = 0; i < iterations; i++) {
-      promises.push(getRequest(fn.url));
-    }
-    const invokeResults = await Promise.all(promises);
-
-    for (const invokeResult of invokeResults) {
-      durations.push(invokeResult['duration']);
-      cwLookupInfo.push({
-        duration: invokeResult['duration'],
-        logGroupName: invokeResult['logGroupName'],
-        logStreamName: invokeResult['logStreamName'],
-        requestId: invokeResult['requestId'],
-        startTime: invokeResult['startTime'],
-        endTime: invokeResult['endTime'],
-      });
-    }
-    const stats = getStats(durations, [], getResult.Configuration);
+    const stats = getStats(durations[fn.url], [], getResult.Configuration);
 
     const command = new PutCommand({
       Item: {
         ...stats,
         getResultConfiguration: getResult.Configuration,
-        CwLookupInfo: cwLookupInfo,
-        LastCall: Math.max(...cwLookupInfo.map((x) => x['endTime'])),
+        CwLookupInfo: cwLookupInfo[fn.url],
+        LastCall: Math.max(...cwLookupInfo[fn.url].map((x) => x['endTime'])),
         Date: date,
         pk: stats.Runtime,
         sk: `${date}#${fn.apiG}-${stats.FunctionName}`,
