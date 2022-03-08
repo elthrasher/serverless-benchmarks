@@ -102,7 +102,7 @@ export class ServerlessBenchmarksStack extends Stack {
       {
         ...lambdaProps,
         timeout: Duration.minutes(15),
-        entry: `${__dirname}/../fns/benchmarkViaHttp.ts`,
+        entry: `${__dirname}/../fns/benchmark-via-http.ts`,
         functionName: 'benchmarkViaHttp',
       }
     );
