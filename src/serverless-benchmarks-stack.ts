@@ -114,13 +114,13 @@ export class ServerlessBenchmarksStack extends Stack {
       entry: `${__dirname}/../fns/update-ddb-later.ts`,
       functionName: 'updateDdbLater',
     });
-    table.grantReadData(updateDdbLaterFn);
+    table.grantReadWriteData(updateDdbLaterFn);
 
     updateDdbLaterFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         resources: ['*'],
-        actions: ['logs:GetLogEvents'],
+        actions: ['logs:FilterLogEvents'],
       })
     );
 
@@ -141,6 +141,7 @@ export class ServerlessBenchmarksStack extends Stack {
     const benchmarkViaHttpTargetA = new LambdaFunction(benchmarkViaHttpFn);
     const benchmarkViaHttpTargetB = new LambdaFunction(benchmarkViaHttpFn);
     const benchmarkViaHttpTargetC = new LambdaFunction(benchmarkViaHttpFn);
+    const lambdaUpdateDdbLater = new LambdaFunction(updateDdbLaterFn);
 
     new Rule(this, 'BenchmarkRule', {
       ruleName: 'LambdaBenchmarkRule',
@@ -164,6 +165,12 @@ export class ServerlessBenchmarksStack extends Stack {
       ruleName: 'LambdaBenchmarkRuleC',
       schedule: Schedule.cron({ hour: '4', minute: '0' }),
       targets: [benchmarkViaHttpTargetC],
+    });
+
+    new Rule(this, 'UpdateDdbLater', {
+      ruleName: 'LambdaUpdateDdbLater',
+      schedule: Schedule.cron({ hour: '1-4', minute: '15' }),
+      targets: [lambdaUpdateDdbLater],
     });
 
     const restApi = new apigateway.RestApi(this, 'Benchmarks');

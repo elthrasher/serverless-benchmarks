@@ -1,11 +1,10 @@
 import {
   CloudWatchLogsClient,
-  GetLogEventsCommand,
+  FilterLogEventsCommand,
 } from '@aws-sdk/client-cloudwatch-logs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
-
-import { CloudWatchStats } from './benchmarkViaHttp';
+import { DynamoDBDocumentClient, QueryCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { getStats } from './util';
 
 const cloudwatchlogsClient = new CloudWatchLogsClient({});
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -13,13 +12,14 @@ const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 });
 
 const tableName = process.env.TABLE_NAME;
+const bufferForCloudWatchEndTime = 50;
 
 export const handler = async () => {
   const delayBeforeLooking = 10 * 60000; // minutes
   const currentTime = new Date().getTime();
 
-  // query the dynamodb table, to find items that need to be looked up in CloudWatch Logs
-  const command = new QueryCommand({
+  // Query the dynamodb table, to find items that need data from CloudWatch Logs to complete their entries
+  const getItemsToUpdateCommand = new QueryCommand({
     TableName: 'Benchmarks', //tableName,
     IndexName: 'itemsThatNeedCwData',
     ExpressionAttributeValues: {
@@ -28,75 +28,123 @@ export const handler = async () => {
     },
     KeyConditionExpression: 'pk = :pk and LastCall < :lc',
   });
-  const data = await docClient.send(command);
-  // console.log('data:', data);
-  // console.log('CwLookupInfo:', [0].CwLookupInfo)
+  const itemsToUpdate = await docClient.send(getItemsToUpdateCommand);
 
-  console.log('data.Items.length:', data?.Items?.length);
-  data?.Items?.forEach((item) => {
-    const durations = [];
-    const inits = [];
-    const getResultConfiguration = item.getResultConfiguration;
+  // Get the CloudWatch lookup information in order to request it with the least total requests to CloudWatch Logs
+  if (itemsToUpdate && itemsToUpdate.Items) {
+    const justCwLookupInfo = itemsToUpdate.Items.map(item => item.CwLookupInfo);
 
-    console.log('item.CwLookupInfo.length:', item.CwLookupInfo.length);
+    let logGroupsToGet: {
+      [key: string]: {
+        'startTime': number,
+        'endTime': number,
+        'logStreamNames': string[],
+      }
+    } = {};
 
-    let count = 0;
-    item.CwLookupInfo.forEach(async (cwLookupItem: CloudWatchStats) => {
-      count++;
+    for (const items of justCwLookupInfo) {
+      for (const item of items) {
+        if (logGroupsToGet.hasOwnProperty(item['logGroupName'])) {
+          if (logGroupsToGet[item['logGroupName']]['startTime'] > item['startTime']) {
+            logGroupsToGet[item['logGroupName']]['startTime'] = item['startTime'];
+          }
+          if (logGroupsToGet[item['logGroupName']]['endTime'] < item['endTime']) {
+            logGroupsToGet[item['logGroupName']]['endTime'] = item['endTime'];
+          }
+          logGroupsToGet[item['logGroupName']]['logStreamNames'].push(item['logStreamName']);
+        } else {
+          logGroupsToGet[item['logGroupName']] = {
+            'startTime': item['startTime'],
+            'endTime': item['endTime'],
+            'logStreamNames': [item['logStreamName']],
+          };
+        }
+      }
+    }
 
-      console.log(count + '. cwLookupItem:', cwLookupItem);
-      // get the CloudWatch logs of the target lambda's invocation
-      const duration = cwLookupItem['duration'];
+    // to store all of the events we retrieve from Cloud Watch Logs, later will be used to match them to the requests
+    let allEvents: any[] = [];
 
-      console.log('duration1:', duration);
-      const getLogEventsCommand = new GetLogEventsCommand({
-        logGroupName: cwLookupItem['logGroupName'],
-        logStreamName: cwLookupItem['logStreamName'],
-        startTime: cwLookupItem['startTime'],
-        endTime: cwLookupItem['endTime'],
-      });
-      console.log('duration2:', duration);
-      try {
-        const cwEvents = await cloudwatchlogsClient.send(getLogEventsCommand);
-        console.log('duration3:', duration);
-        console.log('cwEvents:', cwEvents);
-      } catch (error) {
-        console.error('error:', error);
+    for (const logGroupToGet of Object.keys(logGroupsToGet)) {
+      // console.log(logGroupToGet, "logGroupsToGet[logGroupToGet]['logStreamNames'].length", logGroupsToGet[logGroupToGet]['logStreamNames'].length)
+
+      // FilterLogEventsCommand will only accept 100 log stream names at a time, so need to slice this into chunks of 100 and loop through them
+      for (let sliceStart = 0; sliceStart < logGroupsToGet[logGroupToGet]['logStreamNames'].length; sliceStart += 100) {
+        let cwEvents: any = {};
+        let iteration = 0;
+
+        // using a do,while loop for continuing to request until the nextToken key is undefined.
+        do {
+          iteration++;
+          let filterLogEventsCommandParameters: any = {
+            logGroupName: logGroupToGet,
+            logStreamNames: logGroupsToGet[logGroupToGet]['logStreamNames'].slice(sliceStart, sliceStart + 100),  // 100 Stream Names is the maximum supported.
+            startTime: logGroupsToGet[logGroupToGet]['startTime'],
+            endTime: (logGroupsToGet[logGroupToGet]['endTime'] + bufferForCloudWatchEndTime),
+            filterPattern: "REPORT",
+          }
+          if (cwEvents['nextToken']) {
+            filterLogEventsCommandParameters['nextToken'] = cwEvents['nextToken'];
+          }
+          const filterLogEventsCommand = new FilterLogEventsCommand(filterLogEventsCommandParameters);
+          cwEvents = await cloudwatchlogsClient.send(filterLogEventsCommand);
+
+          // console.log('cwEvents:', cwEvents);
+
+          const toAddToAllEvents = cwEvents.events.map(item => ({ ...item, logGroupName: logGroupToGet }));
+          allEvents = allEvents.concat(...toAddToAllEvents);
+          // console.log(logGroupToGet, `${sliceStart}-${sliceStart + 100}`, 'iteration', iteration, 'cwEvents.events.length:', cwEvents.events.length);
+        }
+        while (cwEvents['nextToken']);
+
+        // console.log('allEvents.length:', allEvents.length);
+      }
+    };
+    // console.log('Done retrieving events from CloudWatch, ready to start matching them to their requests', 'allEvents.length:', allEvents.length);
+    // now go through DynamoDB record by record, completing each one.
+    for (const itemToUpdate of itemsToUpdate.Items) {
+
+      const pk = itemToUpdate.pk;
+      const sk = itemToUpdate.sk;
+      const date = itemToUpdate.Date;
+      const getResultConfiguration = itemToUpdate.getResultConfiguration;
+
+      const durations = [];
+      const inits = [];
+      for (const cwLookupItem of itemToUpdate.CwLookupInfo) {
+
+        const itemOfInterest = allEvents.find(item => {
+          return (item.logGroupName == cwLookupItem.logGroupName
+            && item.logStreamName == cwLookupItem.logStreamName
+            && item.message.startsWith(`REPORT RequestId: ${cwLookupItem.requestId}`)
+            && item.timestamp >= cwLookupItem.startTime
+            && item.timestamp <= (cwLookupItem.endTime + bufferForCloudWatchEndTime)
+          )
+        });
+
+        if (!itemOfInterest) {
+          console.log('found nothing for:', cwLookupItem);
+          console.log(`REPORT RequestId: ${cwLookupItem.requestId}`);
+          return;
+        } else {
+          const init = parseFloat(itemOfInterest.message.split('Init Duration: ')[1] || '0');
+          durations.push(cwLookupItem.duration);
+          inits.push(init);
+        }
       }
 
-      // if (cwEvents) {
-      //   const cwRecordOfInterest = cwEvents.events.find(item => item.message.startsWith(`REPORT RequestId: ${cwLookupItem['requestId']}`));
+      const stats = getStats(durations, inits, getResultConfiguration);
 
-      //   console.log('cwEvents:', cwEvents);
-      //   console.log('cwRecordOfInterest:', cwRecordOfInterest);
-
-      //   const init = parseFloat(cwRecordOfInterest.message.split('Init Duration: ')[1] || '0');
-
-      //   durations.push(duration);
-      //   inits.push(init);
-
-      //   console.log('init:', init)
-      // } else {
-      //   console.log('Got nothing! GetLogsParams:', {
-      //     logGroupName: cwLookupItem['logGroupName'],
-      //     logStreamName: cwLookupItem['logStreamName'],
-      //     startTime: cwLookupItem['startTime'],
-      //     endTime: cwLookupItem['endTime']
-      //   });
-      // }
-    });
-
-    // const stats = getStats(durations, inits, getResultConfiguration);
-
-    // const command = new PutCommand({
-    //   Item: {
-    //     ...stats,
-    //     Date: date,
-    //     pk: stats.Runtime,
-    //     sk: `${date}#${fn.apiG}-${stats.FunctionName}`,
-    //   },
-    //   TableName: tableName,
-    // });
-    // await docClient.send(command);
-  });
-};
+      const command = new PutCommand({
+        Item: {
+          ...stats,
+          Date: date,
+          pk: pk,
+          sk: sk,
+        },
+        TableName: tableName,
+      });
+      await docClient.send(command);
+    }
+  }
+}
