@@ -1,4 +1,4 @@
-import { Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy, StackProps } from 'aws-cdk-lib';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import {
   Architecture,
@@ -12,21 +12,30 @@ import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
+import * as sst from "@serverless-stack/resources";
 
-export class Csv2DDBStack extends Stack {
+export default class Csv2DDBStack extends sst.Stack {
   public functions: LambdaFunction[];
 
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(
+    scope: sst.App,
+    id: string,
+    props?: sst.StackProps
+  ) {
     super(scope, id, props);
 
     const fileSize = 100; // 100 or 1000
 
-    const table = new Table(this, 'SalesTable', {
-      billingMode: BillingMode.PAY_PER_REQUEST,
-      partitionKey: { name: 'pk', type: AttributeType.STRING },
-      removalPolicy: RemovalPolicy.DESTROY,
-      sortKey: { name: 'sk', type: AttributeType.STRING },
-      tableName: 'Sales',
+    const table = new sst.Table(this, 'Sales', {
+      fields: {
+        pk: sst.TableFieldType.STRING,
+        sk: sst.TableFieldType.STRING,
+      },
+      primaryIndex: { partitionKey: "pk", sortKey: "sk" },
+      dynamodbTable: {
+        billingMode: BillingMode.PAY_PER_REQUEST,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }
     });
 
     const bucket = new Bucket(this, 'SalesCsvBucket', {
@@ -36,7 +45,7 @@ export class Csv2DDBStack extends Stack {
 
     new BucketDeployment(this, 'SalesCsvDeployment', {
       destinationBucket: bucket,
-      sources: [Source.asset(`${__dirname}/../assets`)],
+      sources: [Source.asset('./assets')],
     });
 
     const lambdaProps = {
@@ -58,8 +67,8 @@ export class Csv2DDBStack extends Stack {
       ...lambdaProps,
       bundling: { ...lambdaProps.bundling },
       description: `Reads ${fileSize} rows of CSV and writes to DynamoDB. Installs full aws-sdk v2.`,
-      entry: `${__dirname}/../fns/csv2ddb-sdk2.ts`,
-      functionName: 'csv2ddb-sdk2',
+      entry: './fns/csv2ddb-sdk2.ts',
+      functionName: `${this.stage}-csv2ddb-sdk2`,
     });
 
     const csv2ddbSdk2Clients = new NodejsFunction(
@@ -69,8 +78,8 @@ export class Csv2DDBStack extends Stack {
         ...lambdaProps,
         bundling: { ...lambdaProps.bundling },
         description: `Reads ${fileSize} rows of CSV and writes to DynamoDB. Installs only clients from aws-sdk v2.`,
-        entry: `${__dirname}/../fns/csv2ddb-sdk2-clients.ts`,
-        functionName: 'csv2ddb-sdk2-clients',
+        entry: './fns/csv2ddb-sdk2-clients.ts',
+        functionName: `${this.stage}-csv2ddb-sdk2-clients`,
       }
     );
 
@@ -78,20 +87,20 @@ export class Csv2DDBStack extends Stack {
       ...lambdaProps,
       bundling: { ...lambdaProps.bundling, externalModules: ['aws-sdk'] },
       description: `Reads ${fileSize} rows of CSV and writes to DynamoDB. Uses native aws-sdk v2.`,
-      entry: `${__dirname}/../fns/csv2ddb-sdk2.ts`,
-      functionName: 'csv2ddb-sdk2-native',
+      entry: './fns/csv2ddb-sdk2.ts',
+      functionName: `${this.stage}-csv2ddb-sdk2-native`,
     });
 
     const sdkLayer = new LayerVersion(this, 'SdkLayer', {
-      code: Code.fromAsset(`${__dirname}/../node_modules/aws-sdk`),
+      code: Code.fromAsset(`./node_modules/aws-sdk`),
     });
 
     const csv2ddbSdk2Layer = new NodejsFunction(this, 'csv2ddb-sdk2-layer', {
       ...lambdaProps,
       bundling: { ...lambdaProps.bundling, externalModules: ['aws-sdk'] },
       description: `Reads ${fileSize} rows of CSV and writes to DynamoDB. Uses layer aws-sdk v2.`,
-      entry: `${__dirname}/../fns/csv2ddb-sdk2.ts`,
-      functionName: 'csv2ddb-sdk2-layer',
+      entry: './fns/csv2ddb-sdk2.ts',
+      functionName: `${this.stage}-csv2ddb-sdk2-layer`,
       layers: [sdkLayer],
     });
 
@@ -99,8 +108,8 @@ export class Csv2DDBStack extends Stack {
       ...lambdaProps,
       bundling: { ...lambdaProps.bundling },
       description: `Reads ${fileSize} rows of CSV and writes to DynamoDB. Uses modular aws sdk v3.`,
-      entry: `${__dirname}/../fns/csv2ddb-sdk3.ts`,
-      functionName: 'csv2ddb-sdk3',
+      entry: './fns/csv2ddb-sdk3.ts',
+      functionName: `${this.stage}-csv2ddb-sdk3`,
     });
 
     this.functions = [
@@ -113,7 +122,7 @@ export class Csv2DDBStack extends Stack {
 
     this.functions.forEach((fn) => {
       bucket.grantRead(fn);
-      table.grantWriteData(fn);
+      table.dynamodbTable.grantWriteData(fn);
     });
   }
 }

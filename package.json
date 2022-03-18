@@ -6,13 +6,16 @@
   },
   "scripts": {
     "clean": "rimraf cdk.out",
-    "deploy": "npm run clean && cdk deploy --all --require-approval never",
+    "deploy": "npm run clean && sst deploy",
     "destroy": "cdk destroy --all --force",
-    "watch": "cdk watch --all"
+    "watch": "cdk watch --all",
+    "test": "sst test",
+    "start": "sst start",
+    "build": "sst build",
+    "remove": "sst remove"
   },
   "devDependencies": {
     "@types/node": "^14.18.12",
-    "aws-cdk": "2.10.0",
     "esbuild": "^0.14.23",
     "rimraf": "^3.0.2",
     "ts-node": "^10.5.0",
@@ -23,7 +26,9 @@
     "@aws-sdk/client-lambda": "^3.52.0",
     "@aws-sdk/client-s3": "^3.52.0",
     "@aws-sdk/lib-dynamodb": "^3.52.0",
-    "aws-cdk-lib": "2.10.0",
+    "@serverless-stack/cli": "^0.69.0",
+    "@serverless-stack/resources": "^0.69.0",
+    "aws-cdk-lib": "2.15.0",
     "aws-sdk": "^2.1077.0",
     "constructs": "^10.0.67",
     "csvtojson": "^2.0.10"

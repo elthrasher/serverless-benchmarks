@@ -4,7 +4,6 @@ import {
   aws_iam as iam,
   Duration,
   RemovalPolicy,
-  Stack,
   StackProps,
 } from 'aws-cdk-lib';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
@@ -19,25 +18,33 @@ import {
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
+import * as sst from "@serverless-stack/resources";
 
-interface ServerlessBenchmarksStackProps extends StackProps {
+interface ServerlessBenchmarksStackProps extends sst.StackProps {
   functions: LambdaFn[];
 }
 
-export class ServerlessBenchmarksStack extends Stack {
+export default class ServerlessBenchmarksStack extends sst.Stack {
+  // Public reference to the API
+  api;
+
   constructor(
-    scope: Construct,
+    scope: sst.App,
     id: string,
     props: ServerlessBenchmarksStackProps
   ) {
     super(scope, id, props);
 
-    const table = new Table(this, 'BenchmarksTable', {
-      billingMode: BillingMode.PAY_PER_REQUEST,
-      partitionKey: { name: 'pk', type: AttributeType.STRING },
-      removalPolicy: RemovalPolicy.DESTROY,
-      sortKey: { name: 'sk', type: AttributeType.STRING },
-      tableName: 'Benchmarks',
+    const table = new sst.Table(this, 'Benchmarks', {
+      fields: {
+        pk: sst.TableFieldType.STRING,
+        sk: sst.TableFieldType.STRING,
+      },
+      primaryIndex: { partitionKey: "pk", sortKey: "sk" },
+      dynamodbTable: {
+        billingMode: BillingMode.PAY_PER_REQUEST,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }
     });
 
     const lambdaProps = {
@@ -56,11 +63,11 @@ export class ServerlessBenchmarksStack extends Stack {
 
     const benchmarkFn = new NodejsFunction(this, 'benchmark-fn', {
       ...lambdaProps,
-      entry: `${__dirname}/../fns/benchmark.ts`,
-      functionName: 'benchmark',
+      entry: './fns/benchmark.ts',
+      functionName: `${this.stage}-benchmark`,
     });
 
-    table.grantWriteData(benchmarkFn);
+    table.dynamodbTable.grantWriteData(benchmarkFn);
 
     for (const fn of props.functions) {
       benchmarkFn.role?.attachInlinePolicy(
@@ -79,12 +86,12 @@ export class ServerlessBenchmarksStack extends Stack {
     const benchmarkTarget = new LambdaFunction(benchmarkFn);
 
     new Rule(this, 'BenchmarkRule', {
-      ruleName: 'LambdaBenchmarkRule',
+      ruleName: `${this.stage}-LambdaBenchmarkRule`,
       schedule: Schedule.cron({ hour: '7', minute: '0' }),
       targets: [benchmarkTarget],
     });
 
-    const restApi = new apigateway.RestApi(this, 'Benchmarks');
+    this.api = new apigateway.RestApi(this, `${this.stage}-BenchmarksApi`);
 
     const restApiRole = new iam.Role(this, 'BenchmarksRole', {
       assumedBy: new iam.ServicePrincipal('apigateway.amazonaws.com'),
@@ -228,13 +235,13 @@ export class ServerlessBenchmarksStack extends Stack {
         integrationResponses: [
           {
             statusCode: '200',
-            responseTemplates: { 'application/json': "$input.path('$').Items" },
+            responseTemplates: { 'application/json': "#set($context.responseOverride.header.Access-Control-Allow-Origin = '*') $input.path('$').Items" },
           },
         ],
       },
     });
 
-    restApi.root.addMethod('GET', rootIntegration, {
+    this.api.root.addMethod('GET', rootIntegration, {
       methodResponses: [
         {
           statusCode: '200',
@@ -245,12 +252,12 @@ export class ServerlessBenchmarksStack extends Stack {
       ],
     });
 
-    const api = restApi.root.addResource('api');
+    const api = this.api.root.addResource('api');
     api.addMethod('GET', apiIntegration, {
       methodResponses: [{ statusCode: '200' }],
     });
 
-    const ui = restApi.root.addResource('ui');
+    const ui = this.api.root.addResource('ui');
     ui.addMethod('GET', uiIntegration, {
       methodResponses: [
         {

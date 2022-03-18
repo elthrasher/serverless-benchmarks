@@ -1,0 +1,39 @@
+div#root {
+  padding-top: 10px;
+}
+
+.App {
+  text-align: center;
+}
+
+Button {
+  margin: 10px;
+}
+
+/* table */
+table {
+  font-size:16px;
+  font-family: "Trebuchet MS", Arial, Helvetica, sans-serif;
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 90%;
+  margin-top: 10px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+td,  th {
+  text-align: left;
+  padding: 8px;
+}
+
+th {
+  padding-top: 11px;
+  padding-bottom: 11px;
+  background-color: #4C74A1;
+  color: white;
+}
+
+table,  table td {
+  border: 1px solid black;
+}
