@@ -235,7 +235,7 @@ export default class ServerlessBenchmarksStack extends sst.Stack {
         integrationResponses: [
           {
             statusCode: '200',
-            responseTemplates: { 'application/json': "$input.path('$').Items" },
+            responseTemplates: { 'application/json': "#set($context.responseOverride.header.Access-Control-Allow-Origin = '*') $input.path('$').Items" },
           },
         ],
       },
