@@ -25,6 +25,9 @@ interface ServerlessBenchmarksStackProps extends sst.StackProps {
 }
 
 export default class ServerlessBenchmarksStack extends sst.Stack {
+  // Public reference to the API
+  api;
+
   constructor(
     scope: sst.App,
     id: string,
@@ -88,7 +91,7 @@ export default class ServerlessBenchmarksStack extends sst.Stack {
       targets: [benchmarkTarget],
     });
 
-    const restApi = new apigateway.RestApi(this, `${this.stage}-BenchmarksApi`);
+    this.api = new apigateway.RestApi(this, `${this.stage}-BenchmarksApi`);
 
     const restApiRole = new iam.Role(this, 'BenchmarksRole', {
       assumedBy: new iam.ServicePrincipal('apigateway.amazonaws.com'),
@@ -238,7 +241,7 @@ export default class ServerlessBenchmarksStack extends sst.Stack {
       },
     });
 
-    restApi.root.addMethod('GET', rootIntegration, {
+    this.api.root.addMethod('GET', rootIntegration, {
       methodResponses: [
         {
           statusCode: '200',
@@ -249,12 +252,12 @@ export default class ServerlessBenchmarksStack extends sst.Stack {
       ],
     });
 
-    const api = restApi.root.addResource('api');
+    const api = this.api.root.addResource('api');
     api.addMethod('GET', apiIntegration, {
       methodResponses: [{ statusCode: '200' }],
     });
 
-    const ui = restApi.root.addResource('ui');
+    const ui = this.api.root.addResource('ui');
     ui.addMethod('GET', uiIntegration, {
       methodResponses: [
         {

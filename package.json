@@ -6,9 +6,13 @@
   },
   "scripts": {
     "clean": "rimraf cdk.out",
-    "deploy": "npm run clean && cdk deploy --all --require-approval never",
+    "deploy": "npm run clean && sst deploy",
     "destroy": "cdk destroy --all --force",
-    "watch": "cdk watch --all"
+    "watch": "cdk watch --all",
+    "test": "sst test",
+    "start": "sst start",
+    "build": "sst build",
+    "remove": "sst remove"
   },
   "devDependencies": {
     "@types/node": "^14.18.12",
