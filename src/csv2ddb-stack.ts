@@ -12,9 +12,25 @@ import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
+import { HttpApi, HttpMethod } from '@aws-cdk/aws-apigatewayv2-alpha';
+import { HttpLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
+import {
+  LambdaIntegration,
+  RestApi,
+  EndpointType,
+} from 'aws-cdk-lib/aws-apigateway';
+
+export interface HttpApis {
+  apiG: string;
+  arn: string;
+  url: string;
+}
 
 export class Csv2DDBStack extends Stack {
   public functions: LambdaFunction[];
+  public httpApisA: HttpApis[] = [];
+  public httpApisB: HttpApis[] = [];
+  public httpApisC: HttpApis[] = [];
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -111,9 +127,52 @@ export class Csv2DDBStack extends Stack {
       csv2ddbSdk3,
     ];
 
+    const httpApi = new HttpApi(this, 'BenchmarksHttpApi');
+    const restEdgeApi = new RestApi(this, 'BenchmarksRestEdgeApi', {
+      endpointConfiguration: { types: [EndpointType.EDGE] },
+    });
+    const restRegionalApi = new RestApi(this, 'BenchmarksRestRegionalApi', {
+      endpointConfiguration: { types: [EndpointType.REGIONAL] },
+    });
+
+    const restEdge = restEdgeApi.root.addResource('rest');
+    const restRegional = restRegionalApi.root.addResource('rest');
+
     this.functions.forEach((fn) => {
       bucket.grantRead(fn);
       table.grantWriteData(fn);
+
+      const httpIntegration = new HttpLambdaIntegration(
+        `${fn.node.id}-httpIntegration`,
+        fn
+      );
+      const restIntegration = new LambdaIntegration(fn);
+
+      const httpRoute = httpApi.addRoutes({
+        integration: httpIntegration,
+        methods: [HttpMethod.GET],
+        path: `/http/${fn.node.id}`,
+      });
+      const restEdgeResource = restEdge.addResource(fn.node.id);
+      const restRegionalResource = restRegional.addResource(fn.node.id);
+      restEdgeResource.addMethod('GET', restIntegration);
+      restRegionalResource.addMethod('GET', restIntegration);
+
+      this.httpApisA.push({
+        url: `${httpApi.url}http/${fn.node.id}`,
+        arn: fn.functionArn,
+        apiG: 'HttpApi',
+      });
+      this.httpApisB.push({
+        url: `${restEdgeApi.url}rest/${fn.node.id}`,
+        arn: fn.functionArn,
+        apiG: 'RestEdgeApi',
+      });
+      this.httpApisC.push({
+        url: `${restRegionalApi.url}rest/${fn.node.id}`,
+        arn: fn.functionArn,
+        apiG: 'RestRegionalApi',
+      });
     });
   }
 }

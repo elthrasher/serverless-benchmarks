@@ -15,7 +15,7 @@ const tableName = process.env.TABLE_NAME;
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const s3 = new S3({});
 
-export const handler = async () => {
+export const handler = async (event: Object, context: Object) => {
   if (!bucketName || !bucketKey || !tableName) {
     throw new Error('Missing required env var!');
   }
@@ -25,19 +25,19 @@ export const handler = async () => {
   });
   const response = await s3.send(getCommand);
 
-  return new Promise((resolve) =>
-    csv()
-      .fromStream(response.Body)
-      .subscribe(
-        async (item) => {
-          const command = new PutCommand({
-            Item: { ...item, pk: item['Order ID'], sk: item['Order Date'] },
-            TableName: tableName,
-          });
-          await docClient.send(command);
-        },
-        () => console.error('error'),
-        () => resolve
-      )
-  );
+  await csv()
+    .fromStream(response.Body)
+    .subscribe(async (item) => {
+      const command = new PutCommand({
+        Item: { ...item, pk: item['Order ID'], sk: item['Order Date'] },
+        TableName: tableName,
+      });
+      await docClient.send(command);
+    }
+    )
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ event: event, context: context }),
+  }
 };

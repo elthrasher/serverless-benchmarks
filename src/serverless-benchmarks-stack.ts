@@ -20,8 +20,13 @@ import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
+import { HttpApis } from './csv2ddb-stack';
+
 interface ServerlessBenchmarksStackProps extends StackProps {
   functions: LambdaFn[];
+  httpApisA: HttpApis[];
+  httpApisB: HttpApis[];
+  httpApisC: HttpApis[];
 }
 
 export class ServerlessBenchmarksStack extends Stack {
@@ -40,11 +45,26 @@ export class ServerlessBenchmarksStack extends Stack {
       tableName: 'Benchmarks',
     });
 
+    table.addGlobalSecondaryIndex({
+      indexName: 'itemsThatNeedCwData',
+      partitionKey: {
+        name: 'pk',
+        type: AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'LastCall',
+        type: AttributeType.NUMBER,
+      },
+    });
+
     const lambdaProps = {
       architecture: Architecture.ARM_64,
       bundling: { minify: true, sourceMap: true },
       environment: {
         COMMA_SEP_ARNS: props.functions.map((fn) => fn.functionArn).join(','),
+        JSON_STRINGIFIED_TARGETS_A: JSON.stringify(props.httpApisA),
+        JSON_STRINGIFIED_TARGETS_B: JSON.stringify(props.httpApisB),
+        JSON_STRINGIFIED_TARGETS_C: JSON.stringify(props.httpApisC),
         NODE_OPTIONS: '--enable-source-maps',
         TABLE_NAME: table.tableName,
       },
@@ -76,12 +96,81 @@ export class ServerlessBenchmarksStack extends Stack {
       fn.grantInvoke(benchmarkFn);
     }
 
+    const benchmarkViaHttpFn = new NodejsFunction(
+      this,
+      'benchmark-via-http-fn',
+      {
+        ...lambdaProps,
+        timeout: Duration.minutes(15),
+        entry: `${__dirname}/../fns/benchmark-via-http.ts`,
+        functionName: 'benchmarkViaHttp',
+      }
+    );
+    table.grantWriteData(benchmarkViaHttpFn);
+
+    const updateDdbLaterFn = new NodejsFunction(this, 'update-ddb-later-fn', {
+      ...lambdaProps,
+      timeout: Duration.minutes(15),
+      entry: `${__dirname}/../fns/update-ddb-later.ts`,
+      functionName: 'updateDdbLater',
+    });
+    table.grantReadWriteData(updateDdbLaterFn);
+
+    updateDdbLaterFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        resources: ['*'],
+        actions: ['logs:FilterLogEvents'],
+      })
+    );
+
+    for (const fn of props.functions) {
+      benchmarkViaHttpFn.role?.attachInlinePolicy(
+        new Policy(this, `get-${fn.node.id}-viaHttp-policy`, {
+          statements: [
+            new PolicyStatement({
+              actions: ['lambda:GetFunction'],
+              resources: [fn.functionArn],
+            }),
+          ],
+        })
+      );
+    }
+
     const benchmarkTarget = new LambdaFunction(benchmarkFn);
+    const benchmarkViaHttpTargetA = new LambdaFunction(benchmarkViaHttpFn);
+    const benchmarkViaHttpTargetB = new LambdaFunction(benchmarkViaHttpFn);
+    const benchmarkViaHttpTargetC = new LambdaFunction(benchmarkViaHttpFn);
+    const lambdaUpdateDdbLater = new LambdaFunction(updateDdbLaterFn);
 
     new Rule(this, 'BenchmarkRule', {
       ruleName: 'LambdaBenchmarkRule',
-      schedule: Schedule.cron({ hour: '7', minute: '0' }),
+      schedule: Schedule.cron({ hour: '1', minute: '0' }),
       targets: [benchmarkTarget],
+    });
+
+    new Rule(this, 'BenchmarkRuleA', {
+      ruleName: 'LambdaBenchmarkRuleA',
+      schedule: Schedule.cron({ hour: '2', minute: '0' }),
+      targets: [benchmarkViaHttpTargetA],
+    });
+
+    new Rule(this, 'BenchmarkRuleB', {
+      ruleName: 'LambdaBenchmarkRuleB',
+      schedule: Schedule.cron({ hour: '3', minute: '0' }),
+      targets: [benchmarkViaHttpTargetB],
+    });
+
+    new Rule(this, 'BenchmarkRuleC', {
+      ruleName: 'LambdaBenchmarkRuleC',
+      schedule: Schedule.cron({ hour: '4', minute: '0' }),
+      targets: [benchmarkViaHttpTargetC],
+    });
+
+    new Rule(this, 'UpdateDdbLater', {
+      ruleName: 'LambdaUpdateDdbLater',
+      schedule: Schedule.cron({ hour: '1-4', minute: '15' }),
+      targets: [lambdaUpdateDdbLater],
     });
 
     const restApi = new apigateway.RestApi(this, 'Benchmarks');
